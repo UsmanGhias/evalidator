@@ -1,15 +1,11 @@
-import os
-import uuid
+from http.server import BaseHTTPRequestHandler
 import json
+import uuid
 import re
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+import os
+import time
 import redis
 from email_validation_engine import EmailValidator
-import time
-
-app = Flask(__name__)
-CORS(app)
 
 # Redis connection
 redis_client = redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379/0'))
@@ -20,7 +16,6 @@ def parse_emails_from_text(text):
     for line in text.replace(',', '\n').split('\n'):
         line = line.strip()
         if line:
-            # Extract email addresses using regex
             email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
             found_emails = re.findall(email_pattern, line)
             emails.extend(found_emails)
@@ -39,45 +34,39 @@ def remove_duplicates(emails):
     
     return unique_emails
 
-def handler(request):
-    """Submit emails for validation"""
-    try:
-        if request.method != 'POST':
-            return jsonify({'error': 'Method not allowed'}), 405
-        
-        emails = []
-        
-        # Handle JSON input
-        if request.is_json:
-            data = request.get_json()
+class handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            
+            # Parse JSON data
+            data = json.loads(post_data.decode('utf-8'))
+            
+            emails = []
             if 'emails' in data:
                 if isinstance(data['emails'], str):
                     emails = parse_emails_from_text(data['emails'])
                 elif isinstance(data['emails'], list):
                     emails = data['emails']
-        
-        # Handle form data
-        elif request.form:
-            if 'emails' in request.form:
-                email_text = request.form['emails']
-                emails = parse_emails_from_text(email_text)
-        
-        if not emails:
-            return jsonify({'error': 'No valid emails provided'}), 400
-        
-        # Remove duplicates
-        unique_emails = remove_duplicates(emails)
-        
-        # Limit to 10,000 emails for MVP
-        if len(unique_emails) > 10000:
-            return jsonify({'error': 'Maximum 10,000 emails allowed'}), 400
-        
-        # For small batches (< 100 emails), process immediately
-        if len(unique_emails) <= 100:
+            
+            if not emails:
+                self.send_error_response(400, 'No valid emails provided')
+                return
+            
+            # Remove duplicates
+            unique_emails = remove_duplicates(emails)
+            
+            # Limit to 100 emails for serverless
+            if len(unique_emails) > 100:
+                self.send_error_response(400, 'Maximum 100 emails allowed in serverless environment')
+                return
+            
+            # Process emails immediately
             validator = EmailValidator()
             results = validator.validate_emails_batch(unique_emails)
             
-            # Generate job ID for consistency
+            # Generate job ID
             job_id = str(uuid.uuid4())
             
             # Store results in Redis
@@ -93,23 +82,44 @@ def handler(request):
             redis_client.setex(f"job:{job_id}", 3600, json.dumps(job_info))
             redis_client.setex(f"results:{job_id}", 3600, json.dumps(results))
             
-            return jsonify({
+            response = {
                 'job_id': job_id,
                 'total_emails': len(unique_emails),
                 'status': 'completed',
                 'message': f'Validation completed for {len(unique_emails)} emails',
                 'results': results
-            })
-        
-        # For larger batches, we'll need to implement a different approach
-        # Since Vercel doesn't support long-running processes
-        else:
-            return jsonify({
-                'error': 'Large batch processing not supported in serverless environment. Please use smaller batches (< 100 emails).'
-            }), 400
+            }
+            
+            self.send_success_response(response)
+            
+        except Exception as e:
+            self.send_error_response(500, f'An error occurred: {str(e)}')
     
-    except Exception as e:
-        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+    
+    def send_success_response(self, data):
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
+    
+    def send_error_response(self, status_code, message):
+        self.send_response(status_code)
+        self.send_header('Content-type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+        error_response = {'error': message}
+        self.wfile.write(json.dumps(error_response).encode())
 
 # For Vercel
 def api(request):

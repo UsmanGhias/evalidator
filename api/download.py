@@ -1,66 +1,81 @@
-import os
+from http.server import BaseHTTPRequestHandler
 import json
 import csv
 import io
-from flask import Flask, request, jsonify, Response
-from flask_cors import CORS
+import os
 import redis
-
-app = Flask(__name__)
-CORS(app)
+from urllib.parse import urlparse
 
 # Redis connection
 redis_client = redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379/0'))
 
-def handler(request):
-    """Download results as CSV"""
-    try:
-        # Extract job_id from URL path
-        path_parts = request.path.split('/')
-        if len(path_parts) < 3:
-            return jsonify({'error': 'Job ID required'}), 400
-        
-        job_id = path_parts[-1]
-        
-        # Get results
-        results_data = redis_client.get(f"results:{job_id}")
-        if not results_data:
-            return jsonify({'error': 'Results not found'}), 404
-        
-        results = json.loads(results_data)
-        
-        # Create CSV
-        output = io.StringIO()
-        writer = csv.writer(output)
-        
-        # Write header
-        writer.writerow(['Email', 'Status', 'Details'])
-        
-        # Write data
-        for result in results:
-            writer.writerow([
-                result['email'],
-                result['status'],
-                result.get('details', '')
-            ])
-        
-        # Create response
-        csv_content = output.getvalue()
-        output.close()
-        
-        response = Response(
-            csv_content,
-            mimetype='text/csv',
-            headers={
-                'Content-Disposition': f'attachment; filename=email_validation_results_{job_id[:8]}.csv'
-            }
-        )
-        
-        return response
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        try:
+            # Parse URL to get job_id
+            parsed_url = urlparse(self.path)
+            path_parts = parsed_url.path.split('/')
+            
+            # Extract job_id from URL path
+            if len(path_parts) < 3:
+                self.send_error_response(400, 'Job ID required')
+                return
+            
+            job_id = path_parts[-1]
+            
+            # Get results
+            results_data = redis_client.get(f"results:{job_id}")
+            if not results_data:
+                self.send_error_response(404, 'Results not found')
+                return
+            
+            results = json.loads(results_data)
+            
+            # Create CSV
+            output = io.StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            writer.writerow(['Email', 'Status', 'Details'])
+            
+            # Write data
+            for result in results:
+                writer.writerow([
+                    result['email'],
+                    result['status'],
+                    result.get('details', '')
+                ])
+            
+            # Get CSV content
+            csv_content = output.getvalue()
+            output.close()
+            
+            # Send response
+            self.send_response(200)
+            self.send_header('Content-type', 'text/csv')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+            self.send_header('Content-Disposition', f'attachment; filename=email_validation_results_{job_id[:8]}.csv')
+            self.end_headers()
+            self.wfile.write(csv_content.encode())
+            
+        except Exception as e:
+            self.send_error_response(500, f'An error occurred: {str(e)}')
     
-    except Exception as e:
-        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
-
-# For Vercel
-def api(request):
-    return handler(request) 
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+    
+    def send_error_response(self, status_code, message):
+        self.send_response(status_code)
+        self.send_header('Content-type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+        error_response = {'error': message}
+        self.wfile.write(json.dumps(error_response).encode()) 
