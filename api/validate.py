@@ -6,6 +6,7 @@ import os
 import time
 import redis
 from email_validation_engine import EmailValidator
+from subscription import SubscriptionManager
 
 # Redis connection
 redis_client = redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379/0'))
@@ -57,14 +58,31 @@ class handler(BaseHTTPRequestHandler):
             # Remove duplicates
             unique_emails = remove_duplicates(emails)
             
-            # Limit to 100 emails for serverless
-            if len(unique_emails) > 100:
-                self.send_error_response(400, 'Maximum 100 emails allowed in serverless environment')
+            # Get user ID (in production, get from authentication)
+            user_id = data.get('user_id', 'anonymous')
+            
+            # Check subscription limits
+            can_validate, usage = SubscriptionManager.can_validate_emails(user_id, len(unique_emails))
+            
+            if not can_validate:
+                self.send_error_response(402, {
+                    'error': 'Usage limit exceeded',
+                    'usage': usage,
+                    'upgrade_required': True
+                })
+                return
+            
+            # Limit to 100 emails for serverless (free users)
+            if usage['plan'] == 'free' and len(unique_emails) > 100:
+                self.send_error_response(400, 'Maximum 100 emails allowed for free users. Upgrade to premium for unlimited validation.')
                 return
             
             # Process emails immediately
             validator = EmailValidator()
             results = validator.validate_emails_batch(unique_emails)
+            
+            # Update usage
+            SubscriptionManager.update_usage(user_id, len(unique_emails))
             
             # Generate job ID
             job_id = str(uuid.uuid4())
@@ -72,22 +90,37 @@ class handler(BaseHTTPRequestHandler):
             # Store results in Redis
             job_info = {
                 'job_id': job_id,
+                'user_id': user_id,
                 'total_emails': len(unique_emails),
                 'status': 'completed',
                 'created_at': time.time(),
                 'progress': 100,
-                'completed_at': time.time()
+                'completed_at': time.time(),
+                'plan': usage['plan']
             }
             
             redis_client.setex(f"job:{job_id}", 3600, json.dumps(job_info))
             redis_client.setex(f"results:{job_id}", 3600, json.dumps(results))
+            
+            # Calculate statistics
+            valid_count = len([r for r in results if r['status'] == 'Valid'])
+            invalid_count = len([r for r in results if r['status'] == 'Invalid'])
+            unknown_count = len([r for r in results if r['status'] == 'Unknown'])
+            disposable_count = len([r for r in results if r['status'] == 'Disposable'])
             
             response = {
                 'job_id': job_id,
                 'total_emails': len(unique_emails),
                 'status': 'completed',
                 'message': f'Validation completed for {len(unique_emails)} emails',
-                'results': results
+                'results': results,
+                'statistics': {
+                    'valid': valid_count,
+                    'invalid': invalid_count,
+                    'unknown': unknown_count,
+                    'disposable': disposable_count
+                },
+                'usage': usage
             }
             
             self.send_success_response(response)
@@ -118,7 +151,12 @@ class handler(BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.end_headers()
-        error_response = {'error': message}
+        
+        if isinstance(message, dict):
+            error_response = message
+        else:
+            error_response = {'error': message}
+            
         self.wfile.write(json.dumps(error_response).encode())
 
 # For Vercel

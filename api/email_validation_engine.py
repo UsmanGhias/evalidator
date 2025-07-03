@@ -6,20 +6,22 @@ from email_validator import validate_email, EmailNotValidError
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import requests
+import ssl
 
 class EmailValidator:
     """
-    Email validation engine with 3-layer validation:
+    Enhanced email validation engine with 3-layer validation:
     1. Syntax validation
     2. Domain/MX record validation  
-    3. SMTP validation
+    3. SMTP validation with improved reliability
     """
     
     def __init__(self):
         self.disposable_domains = self._load_disposable_domains()
         self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'EmailValidator/1.0'})
-        self.timeout = 10  # seconds
+        self.session.headers.update({'User-Agent': 'EmailValidator/2.0'})
+        self.timeout = 15  # Increased timeout
+        self.max_retries = 2
         
     def _load_disposable_domains(self):
         """Load common disposable email domains"""
@@ -88,9 +90,9 @@ class EmailValidator:
         except Exception as e:
             return False, f"Domain validation error: {str(e)}"
     
-    def validate_smtp(self, email, timeout=10):
+    def validate_smtp(self, email, timeout=15):
         """
-        Validate email existence via SMTP
+        Enhanced SMTP validation with better error handling
         """
         try:
             domain = email.split('@')[1]
@@ -99,31 +101,65 @@ class EmailValidator:
             mx_records = dns.resolver.resolve(domain, 'MX')
             mx_record = str(mx_records[0].exchange)
             
-            # Connect to SMTP server
-            server = smtplib.SMTP(timeout=timeout)
-            server.connect(mx_record, 25)
-            server.helo('emailvalidator.com')
-            server.mail('test@emailvalidator.com')
+            # Try multiple SMTP ports and methods
+            smtp_ports = [25, 587, 465]
+            smtp_methods = ['plain', 'ssl', 'tls']
             
-            # Test the email address
-            code, message = server.rcpt(email)
-            server.quit()
+            for port in smtp_ports:
+                for method in smtp_methods:
+                    try:
+                        if method == 'ssl':
+                            server = smtplib.SMTP_SSL(mx_record, port, timeout=timeout)
+                        else:
+                            server = smtplib.SMTP(mx_record, port, timeout=timeout)
+                            if method == 'tls':
+                                server.starttls()
+                        
+                        server.helo('emailvalidator.com')
+                        server.mail('test@emailvalidator.com')
+                        
+                        # Test the email address
+                        code, message = server.rcpt(email)
+                        server.quit()
+                        
+                        if code == 250:
+                            return True, "Email address exists"
+                        elif code == 550:
+                            return False, "Email address does not exist"
+                        elif code == 451 or code == 452:
+                            return "unknown", "Temporary server error - cannot verify"
+                        else:
+                            return "unknown", f"SMTP response: {code} {message}"
+                            
+                    except smtplib.SMTPConnectError:
+                        continue
+                    except smtplib.SMTPServerDisconnected:
+                        continue
+                    except socket.timeout:
+                        continue
+                    except ssl.SSLError:
+                        continue
+                    except Exception:
+                        continue
             
-            if code == 250:
-                return True, "Email address exists"
-            elif code == 550:
-                return False, "Email address does not exist"
-            elif code == 451 or code == 452:
-                return "unknown", "Temporary server error - cannot verify"
-            else:
-                return "unknown", f"SMTP response: {code} {message}"
+            # If all methods failed, try a simpler approach
+            try:
+                server = smtplib.SMTP(mx_record, 25, timeout=10)
+                server.helo('emailvalidator.com')
+                server.mail('test@emailvalidator.com')
+                code, message = server.rcpt(email)
+                server.quit()
                 
-        except smtplib.SMTPConnectError:
-            return "unknown", "Cannot connect to mail server"
-        except smtplib.SMTPServerDisconnected:
-            return "unknown", "Mail server disconnected"
-        except socket.timeout:
-            return "unknown", "SMTP timeout"
+                if code == 250:
+                    return True, "Email address exists"
+                elif code == 550:
+                    return False, "Email address does not exist"
+                else:
+                    return "unknown", f"SMTP response: {code} {message}"
+                    
+            except Exception as e:
+                return "unknown", f"SMTP validation failed: {str(e)}"
+                
         except Exception as e:
             return "unknown", f"SMTP validation error: {str(e)}"
     
@@ -175,7 +211,7 @@ class EmailValidator:
             'timestamp': time.time()
         }
     
-    def validate_emails_batch(self, emails, progress_callback=None, max_workers=10):
+    def validate_emails_batch(self, emails, progress_callback=None, max_workers=5):
         """
         Validate multiple emails with progress tracking
         """
