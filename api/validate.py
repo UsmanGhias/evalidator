@@ -65,16 +65,34 @@ class handler(BaseHTTPRequestHandler):
             can_validate, usage = SubscriptionManager.can_validate_emails(user_id, len(unique_emails))
             
             if not can_validate:
+                plan_details = SubscriptionManager.get_plan_details(usage['plan'])
                 self.send_error_response(402, {
                     'error': 'Usage limit exceeded',
                     'usage': usage,
-                    'upgrade_required': True
+                    'upgrade_required': True,
+                    'current_plan': usage['plan'],
+                    'plan_name': plan_details['name'],
+                    'emails_limit': usage['emails_limit'],
+                    'emails_used': usage['emails_used'],
+                    'available_plans': SubscriptionManager.get_all_plans()
                 })
                 return
             
-            # Limit to 100 emails for serverless (free users)
-            if usage['plan'] == 'free' and len(unique_emails) > 100:
-                self.send_error_response(400, 'Maximum 100 emails allowed for free users. Upgrade to premium for unlimited validation.')
+            # Check plan-specific limits
+            plan_config = SubscriptionManager.get_plan_details(usage['plan'])
+            max_emails_per_batch = {
+                'free': 100,
+                'starter': 1000,
+                'professional': 10000,
+                'enterprise': 100000
+            }.get(usage['plan'], 100)
+            
+            if len(unique_emails) > max_emails_per_batch:
+                self.send_error_response(400, {
+                    'error': f'Maximum {max_emails_per_batch} emails allowed per batch for {plan_config["name"]} plan. Please upgrade for larger batches.',
+                    'upgrade_required': True,
+                    'available_plans': SubscriptionManager.get_all_plans()
+                })
                 return
             
             # Process emails immediately
@@ -96,7 +114,8 @@ class handler(BaseHTTPRequestHandler):
                 'created_at': time.time(),
                 'progress': 100,
                 'completed_at': time.time(),
-                'plan': usage['plan']
+                'plan': usage['plan'],
+                'plan_name': plan_config['name']
             }
             
             redis_client.setex(f"job:{job_id}", 3600, json.dumps(job_info))
@@ -107,6 +126,7 @@ class handler(BaseHTTPRequestHandler):
             invalid_count = len([r for r in results if r['status'] == 'Invalid'])
             unknown_count = len([r for r in results if r['status'] == 'Unknown'])
             disposable_count = len([r for r in results if r['status'] == 'Disposable'])
+            role_count = len([r for r in results if r.get('is_role', False)])
             
             response = {
                 'job_id': job_id,
@@ -118,9 +138,12 @@ class handler(BaseHTTPRequestHandler):
                     'valid': valid_count,
                     'invalid': invalid_count,
                     'unknown': unknown_count,
-                    'disposable': disposable_count
+                    'disposable': disposable_count,
+                    'role_emails': role_count
                 },
-                'usage': usage
+                'usage': usage,
+                'plan_details': plan_config,
+                'processing_time': time.time() - job_info['created_at']
             }
             
             self.send_success_response(response)

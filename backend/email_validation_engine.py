@@ -6,24 +6,51 @@ from email_validator import validate_email, EmailNotValidError
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import requests
+import random
+import string
+import asyncio
+import aiosmtplib
+from typing import List, Dict, Tuple, Optional
+import json
+import logging
+import redis
+import threading
+from datetime import datetime, timedelta
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class EmailValidator:
     """
-    Email validation engine with 3-layer validation:
-    1. Syntax validation
-    2. Domain/MX record validation  
-    3. SMTP validation
+    Professional email validation engine using proven free tools and techniques
+    Based on industry best practices from ZeroBounce, Hunter.io, and NeverBounce
     """
     
-    def __init__(self):
+    def __init__(self, redis_client=None):
         self.disposable_domains = self._load_disposable_domains()
+        self.role_prefixes = self._load_role_prefixes()
         self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'EmailValidator/1.0'})
-        self.timeout = 10  # seconds
+        self.session.headers.update({'User-Agent': 'EmailValidator/3.0'})
+        self.timeout = 10
+        self.max_retries = 2
+        self.redis_client = redis_client
+        
+        # Major email providers that block or limit SMTP validation
+        self.blocked_providers = {
+            'gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 
+            'live.com', 'yahoo.com', 'ymail.com', 'aol.com', 'icloud.com',
+            'me.com', 'mac.com', 'protonmail.com', 'tutanota.com'
+        }
+        
+        # Cache for DNS lookups and validation results
+        self.dns_cache = {}
+        self.catch_all_cache = {}
         
     def _load_disposable_domains(self):
-        """Load common disposable email domains"""
-        disposable_domains = {
+        """Load comprehensive disposable email domains"""
+        return {
+            # Temporary email services
             '10minutemail.com', 'tempmail.org', 'guerrillamail.com',
             'mailinator.com', 'yopmail.com', 'temp-mail.org',
             'throwaway.email', 'getnada.com', 'tempmail.net',
@@ -33,26 +60,38 @@ class EmailValidator:
             'get-mail.cf', 'getairmail.com', 'jourrapide.com',
             'lookugly.com', 'lopl.co.cc', 'loveme.ga', 'mt2014.com',
             'mytemp.email', 'prtnx.com', 'rcpt.at', 'rtrtr.com',
-            'smashmail.de', 'tafmail.com', 'teewars.org', 'tfwno.gf'
+            'smashmail.de', 'tafmail.com', 'teewars.org', 'tfwno.gf',
+            'maildrop.cc', 'mailnesia.com', 'trashmail.com', 'spamgourmet.com',
+            'mailcatch.com', 'mailexpire.com', 'tempinbox.com', 'jetable.org',
+            'spambox.us', 'deadaddress.com', 'tempmail.de', 'mailforspam.com',
+            'tempemail.com', 'throwawaymail.com', 'tempymail.com', 'mail-temp.com',
+            'instantmailbox.com', 'mohmal.com', 'harakirimail.com', 'anonymbox.com',
+            'e4ward.com', 'spamfree24.org', 'temporaryinbox.com', 'mailtemp.info',
+            'temp-mail.ru', 'mintemail.com', 'getonemail.com', 'tempr.email'
         }
-        
-        # You can extend this by loading from an external API or file
-        # For production, consider using a service like:
-        # https://github.com/disposable/disposable-email-domains
-        
-        return disposable_domains
+    
+    def _load_role_prefixes(self):
+        """Load role-based email prefixes"""
+        return {
+            'admin', 'administrator', 'info', 'support', 'help', 'contact',
+            'sales', 'marketing', 'billing', 'accounts', 'noreply', 'no-reply',
+            'webmaster', 'postmaster', 'hostmaster', 'root', 'abuse',
+            'security', 'hr', 'human-resources', 'finance', 'accounting',
+            'legal', 'compliance', 'privacy', 'gdpr', 'hello', 'welcome',
+            'team', 'office', 'headquarters', 'press', 'media', 'news',
+            'careers', 'jobs', 'recruitment', 'invoices', 'orders',
+            'shipping', 'delivery', 'returns', 'refunds', 'service',
+            'technical', 'tech', 'it', 'sysadmin', 'devops', 'dev'
+        }
     
     def validate_syntax(self, email):
-        """
-        Validate email syntax using both regex and email-validator library
-        """
+        """Enhanced syntax validation using email-validator library"""
         try:
-            # Basic regex check first
-            if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+            if not email or '@' not in email:
                 return False, "Invalid email format"
             
-            # Use email-validator library for comprehensive syntax validation
-            valid = validate_email(email)
+            # Use email-validator library for comprehensive validation
+            valid = validate_email(email, check_deliverability=False)
             return True, "Valid syntax"
             
         except EmailNotValidError as e:
@@ -60,10 +99,43 @@ class EmailValidator:
         except Exception as e:
             return False, f"Syntax validation error: {str(e)}"
     
+    def get_mx_records(self, domain):
+        """Get MX records with caching"""
+        # Check cache first
+        if domain in self.dns_cache:
+            return self.dns_cache[domain]
+        
+        try:
+            # Query MX records
+            mx_result = dns.resolver.resolve(domain, 'MX')
+            mx_records = sorted(mx_result, key=lambda x: x.preference)
+            mx_list = [str(mx.exchange) for mx in mx_records]
+            
+            # Cache the result
+            self.dns_cache[domain] = mx_list
+            
+            return mx_list
+            
+        except dns.resolver.NXDOMAIN:
+            self.dns_cache[domain] = []
+            return []
+        except dns.resolver.NoAnswer:
+            # Try A record as fallback
+            try:
+                a_result = dns.resolver.resolve(domain, 'A')
+                a_list = [domain]  # Use domain itself as mail server
+                self.dns_cache[domain] = a_list
+                return a_list
+            except:
+                self.dns_cache[domain] = []
+                return []
+        except Exception as e:
+            logger.error(f"DNS lookup error for {domain}: {str(e)}")
+            self.dns_cache[domain] = []
+            return []
+    
     def validate_domain(self, email):
-        """
-        Validate domain and check for MX records
-        """
+        """Enhanced domain validation with MX record check"""
         try:
             domain = email.split('@')[1].lower()
             
@@ -71,52 +143,92 @@ class EmailValidator:
             if domain in self.disposable_domains:
                 return False, "Disposable email service"
             
-            # Check for MX records
-            try:
-                mx_records = dns.resolver.resolve(domain, 'MX')
-                if mx_records:
-                    return True, f"Domain has {len(mx_records)} MX record(s)"
-                else:
-                    return False, "No MX records found"
-            except dns.resolver.NXDOMAIN:
-                return False, "Domain does not exist"
-            except dns.resolver.NoAnswer:
-                return False, "No MX records found"
-            except Exception as e:
-                return False, f"DNS lookup error: {str(e)}"
+            # Check for obvious fake domains
+            fake_tlds = {'.test', '.invalid', '.localhost', '.example'}
+            if any(domain.endswith(tld) for tld in fake_tlds):
+                return False, "Test/fake domain"
+            
+            # Get MX records
+            mx_records = self.get_mx_records(domain)
+            
+            if not mx_records:
+                return False, "No mail server found"
+            
+            return True, f"Domain has {len(mx_records)} mail server(s)"
                 
         except Exception as e:
             return False, f"Domain validation error: {str(e)}"
     
-    def validate_smtp(self, email, timeout=10):
-        """
-        Validate email existence via SMTP
-        """
+    def detect_role_email(self, email):
+        """Detect if email is role-based (not personal)"""
+        local_part = email.split('@')[0].lower()
+        
+        # Direct match
+        if local_part in self.role_prefixes:
+            return True
+        
+        # Check for common patterns
+        for prefix in self.role_prefixes:
+            if (local_part.startswith(prefix + '.') or 
+                local_part.startswith(prefix + '-') or 
+                local_part.startswith(prefix + '_') or
+                local_part.endswith('.' + prefix) or
+                local_part.endswith('-' + prefix) or
+                local_part.endswith('_' + prefix)):
+                return True
+        
+        return False
+    
+    def is_catch_all_domain(self, domain, mx_host):
+        """Detect if domain is catch-all by testing a random email"""
+        if domain in self.catch_all_cache:
+            return self.catch_all_cache[domain]
+        
         try:
-            domain = email.split('@')[1]
+            # Generate a random email that definitely doesn't exist
+            random_email = f"test{random.randint(100000, 999999)}@{domain}"
             
-            # Get MX record
-            mx_records = dns.resolver.resolve(domain, 'MX')
-            mx_record = str(mx_records[0].exchange)
+            # Test the random email
+            result = self._smtp_validate_single(random_email, mx_host, self.timeout)
             
-            # Connect to SMTP server
+            # If random email is accepted, it's a catch-all
+            is_catch_all = result[0] is True
+            
+            # Cache the result
+            self.catch_all_cache[domain] = is_catch_all
+            
+            return is_catch_all
+            
+        except Exception as e:
+            logger.error(f"Catch-all detection error for {domain}: {str(e)}")
+            self.catch_all_cache[domain] = False
+            return False
+    
+    def _smtp_validate_single(self, email, mx_host, timeout):
+        """Single SMTP validation attempt using RCPT TO handshake"""
+        try:
             server = smtplib.SMTP(timeout=timeout)
-            server.connect(mx_record, 25)
-            server.helo('emailvalidator.com')
-            server.mail('test@emailvalidator.com')
+            server.connect(mx_host, 25)
             
-            # Test the email address
+            # Send EHLO
+            server.helo('emailvalidator.com')
+            
+            # Send MAIL FROM (using a valid sender)
+            server.mail('verify@emailvalidator.com')
+            
+            # Test the email address with RCPT TO
             code, message = server.rcpt(email)
             server.quit()
             
+            # Professional evaluation logic based on SMTP response codes
             if code == 250:
                 return True, "Email address exists"
-            elif code == 550:
-                return False, "Email address does not exist"
-            elif code == 451 or code == 452:
-                return "unknown", "Temporary server error - cannot verify"
+            elif code in (550, 551, 553, 501):
+                return False, "Email address rejected by server"
+            elif code in (451, 452, 421, 450):
+                return "unknown", "Temporary server error"
             else:
-                return "unknown", f"SMTP response: {code} {message}"
+                return "unknown", f"Unclear SMTP response: {code}"
                 
         except smtplib.SMTPConnectError:
             return "unknown", "Cannot connect to mail server"
@@ -125,40 +237,141 @@ class EmailValidator:
         except socket.timeout:
             return "unknown", "SMTP timeout"
         except Exception as e:
-            return "unknown", f"SMTP validation error: {str(e)}"
+            return "unknown", f"SMTP validation failed: {str(e)}"
+    
+    def validate_smtp(self, email, timeout=10):
+        """Professional SMTP validation with catch-all detection"""
+        domain = email.split('@')[1].lower()
+        
+        # Check if it's a major provider that blocks SMTP validation
+        if domain in self.blocked_providers:
+            return "unknown", "Major provider - SMTP validation blocked"
+        
+        for attempt in range(self.max_retries):
+            try:
+                # Get MX records
+                mx_records = self.get_mx_records(domain)
+                
+                if not mx_records:
+                    return "unknown", "No mail server found"
+                
+                # Try each MX record
+                for mx_host in mx_records[:2]:  # Try top 2 MX records
+                    try:
+                        # Check if domain is catch-all
+                        if self.is_catch_all_domain(domain, mx_host):
+                            return "unknown", "Catch-all domain detected"
+                        
+                        # Validate the actual email
+                        result = self._smtp_validate_single(email, mx_host, timeout)
+                        if result[0] != "unknown":
+                            return result
+                            
+                    except Exception as e:
+                        continue
+                
+                # If all MX records failed, return unknown
+                return "unknown", "SMTP validation inconclusive"
+                
+            except Exception as e:
+                if attempt == self.max_retries - 1:
+                    return "unknown", f"SMTP validation error: {str(e)}"
+                time.sleep(1)
+    
+    def calculate_deliverability_score(self, result):
+        """Calculate deliverability confidence score (0-100)"""
+        score = 0
+        
+        # Base score by status
+        if result['status'] == 'Valid':
+            score = 95
+        elif result['status'] == 'Invalid':
+            score = 5
+        elif result['status'] == 'Unknown':
+            score = 60
+        elif result['status'] == 'Disposable':
+            score = 10
+        else:
+            score = 0
+        
+        # Adjust based on details
+        details = result.get('details', '').lower()
+        
+        # Reduce score for major providers (blocked validation)
+        if 'major provider' in details or 'validation blocked' in details:
+            score = max(score - 10, 50)
+        
+        # Reduce score for catch-all domains
+        if 'catch-all' in details:
+            score = max(score - 30, 15)
+        
+        # Reduce score for role emails
+        if result.get('is_role', False):
+            score = max(score - 10, score * 0.9)
+        
+        # Reduce score for temporary errors
+        if 'temporary' in details or 'timeout' in details:
+            score = max(score - 20, 30)
+        
+        return min(max(int(score), 0), 100)
     
     def validate_single_email(self, email):
-        """
-        Validate a single email through all validation layers
-        """
+        """Validate a single email through all validation layers"""
         email = email.lower().strip()
+        start_time = time.time()
+        
+        # Check Redis cache first
+        if self.redis_client:
+            try:
+                cached_result = self.redis_client.get(f"email_validation:{email}")
+                if cached_result:
+                    result = json.loads(cached_result)
+                    result['cached'] = True
+                    return result
+            except Exception as e:
+                logger.error(f"Redis cache error: {str(e)}")
         
         # Layer 1: Syntax validation
         syntax_valid, syntax_message = self.validate_syntax(email)
         if not syntax_valid:
-            return {
+            result = {
                 'email': email,
                 'status': 'Syntax Error',
                 'details': syntax_message,
-                'timestamp': time.time()
+                'is_role': False,
+                'deliverability_score': 0,
+                'validation_time': round(time.time() - start_time, 2),
+                'timestamp': time.time(),
+                'cached': False
             }
+            return result
         
         # Layer 2: Domain validation
         domain_valid, domain_message = self.validate_domain(email)
         if not domain_valid:
             if "disposable" in domain_message.lower():
                 status = 'Disposable'
+                score = 10
             else:
                 status = 'Invalid'
+                score = 5
             
-            return {
+            result = {
                 'email': email,
                 'status': status,
                 'details': domain_message,
-                'timestamp': time.time()
+                'is_role': False,
+                'deliverability_score': score,
+                'validation_time': round(time.time() - start_time, 2),
+                'timestamp': time.time(),
+                'cached': False
             }
+            return result
         
-        # Layer 3: SMTP validation
+        # Layer 3: Role email detection
+        is_role = self.detect_role_email(email)
+        
+        # Layer 4: SMTP validation
         smtp_result, smtp_message = self.validate_smtp(email)
         
         if smtp_result is True:
@@ -168,22 +381,43 @@ class EmailValidator:
         else:  # smtp_result == "unknown"
             status = 'Unknown'
         
-        return {
+        result = {
             'email': email,
             'status': status,
             'details': smtp_message,
-            'timestamp': time.time()
+            'is_role': is_role,
+            'validation_time': round(time.time() - start_time, 2),
+            'timestamp': time.time(),
+            'cached': False
         }
+        
+        # Layer 5: Calculate deliverability score
+        result['deliverability_score'] = self.calculate_deliverability_score(result)
+        
+        # Cache the result in Redis
+        if self.redis_client:
+            try:
+                # Cache for 24 hours
+                self.redis_client.setex(
+                    f"email_validation:{email}", 
+                    86400, 
+                    json.dumps(result)
+                )
+            except Exception as e:
+                logger.error(f"Redis cache set error: {str(e)}")
+        
+        return result
     
     def validate_emails_batch(self, emails, progress_callback=None, max_workers=10):
-        """
-        Validate multiple emails with progress tracking
-        """
+        """Validate multiple emails with optimized performance and Redis caching"""
         results = []
         total_emails = len(emails)
         processed = 0
         
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Optimize worker count based on email count
+        optimal_workers = min(max_workers, max(3, total_emails // 5))
+        
+        with ThreadPoolExecutor(max_workers=optimal_workers) as executor:
             # Submit all tasks
             future_to_email = {
                 executor.submit(self.validate_single_email, email): email 
@@ -208,7 +442,11 @@ class EmailValidator:
                         'email': email,
                         'status': 'Error',
                         'details': f'Validation failed: {str(e)}',
-                        'timestamp': time.time()
+                        'is_role': False,
+                        'deliverability_score': 0,
+                        'validation_time': 0,
+                        'timestamp': time.time(),
+                        'cached': False
                     })
                     processed += 1
                     

@@ -7,24 +7,31 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import requests
 import ssl
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class EmailValidator:
     """
-    Enhanced email validation engine with 3-layer validation:
+    Professional email validation engine with 4-layer validation:
     1. Syntax validation
     2. Domain/MX record validation  
-    3. SMTP validation with improved reliability
+    3. SMTP validation with multiple fallbacks
+    4. Role-based email detection
     """
     
     def __init__(self):
         self.disposable_domains = self._load_disposable_domains()
+        self.role_emails = self._load_role_emails()
         self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'EmailValidator/2.0'})
-        self.timeout = 15  # Increased timeout
-        self.max_retries = 2
+        self.session.headers.update({'User-Agent': 'EmailValidator/3.0'})
+        self.timeout = 20  # Increased timeout for better reliability
+        self.max_retries = 3
         
     def _load_disposable_domains(self):
-        """Load common disposable email domains"""
+        """Load comprehensive disposable email domains"""
         disposable_domains = {
             '10minutemail.com', 'tempmail.org', 'guerrillamail.com',
             'mailinator.com', 'yopmail.com', 'temp-mail.org',
@@ -35,37 +42,53 @@ class EmailValidator:
             'get-mail.cf', 'getairmail.com', 'jourrapide.com',
             'lookugly.com', 'lopl.co.cc', 'loveme.ga', 'mt2014.com',
             'mytemp.email', 'prtnx.com', 'rcpt.at', 'rtrtr.com',
-            'smashmail.de', 'tafmail.com', 'teewars.org', 'tfwno.gf'
+            'smashmail.de', 'tafmail.com', 'teewars.org', 'tfwno.gf',
+            'mailnesia.com', 'maildrop.cc', 'mailinator2.com',
+            'tempr.email', 'tmpeml.com', 'tmpmail.org', 'tmpmail.net',
+            'tmpeml.com', 'guerrillamail.org', 'guerrillamail.net',
+            'guerrillamailblock.com', 'guerrillamail.com',
+            'guerrillamail.net', 'guerrillamail.org', 'guerrillamailblock.com',
+            'guerrillamail.com', 'guerrillamail.net', 'guerrillamail.org',
+            'guerrillamailblock.com', 'guerrillamail.com', 'guerrillamail.net',
+            'guerrillamail.org', 'guerrillamailblock.com', 'guerrillamail.com',
+            'guerrillamail.net', 'guerrillamail.org', 'guerrillamailblock.com'
         }
-        
-        # You can extend this by loading from an external API or file
-        # For production, consider using a service like:
-        # https://github.com/disposable/disposable-email-domains
-        
         return disposable_domains
     
+    def _load_role_emails(self):
+        """Load common role-based email patterns"""
+        role_patterns = [
+            'admin', 'administrator', 'webmaster', 'postmaster', 'hostmaster',
+            'info', 'contact', 'support', 'help', 'sales', 'marketing',
+            'newsletter', 'noreply', 'no-reply', 'donotreply', 'do-not-reply',
+            'test', 'demo', 'example', 'sample', 'user', 'guest', 'anonymous',
+            'service', 'services', 'team', 'staff', 'office', 'mail', 'email',
+            'hello', 'hi', 'hello@', 'hi@', 'contact@', 'info@', 'support@',
+            'sales@', 'marketing@', 'newsletter@', 'noreply@', 'test@', 'demo@'
+        ]
+        return set(role_patterns)
+    
     def validate_syntax(self, email):
-        """
-        Validate email syntax using both regex and email-validator library
-        """
+        """Validate email syntax using multiple methods"""
         try:
-            # Basic regex check first
+            email = email.lower().strip()
+            
+            # Basic regex check
             if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
                 return False, "Invalid email format"
             
-            # Use email-validator library for comprehensive syntax validation
-            valid = validate_email(email)
+            # Use email-validator library for comprehensive validation
+            valid = validate_email(email, check_deliverability=False)
             return True, "Valid syntax"
             
         except EmailNotValidError as e:
             return False, str(e)
         except Exception as e:
+            logger.error(f"Syntax validation error for {email}: {str(e)}")
             return False, f"Syntax validation error: {str(e)}"
     
     def validate_domain(self, email):
-        """
-        Validate domain and check for MX records
-        """
+        """Validate domain and check for MX records"""
         try:
             domain = email.split('@')[1].lower()
             
@@ -77,6 +100,8 @@ class EmailValidator:
             try:
                 mx_records = dns.resolver.resolve(domain, 'MX')
                 if mx_records:
+                    # Sort by priority
+                    mx_records = sorted(mx_records, key=lambda x: x.preference)
                     return True, f"Domain has {len(mx_records)} MX record(s)"
                 else:
                     return False, "No MX records found"
@@ -84,41 +109,60 @@ class EmailValidator:
                 return False, "Domain does not exist"
             except dns.resolver.NoAnswer:
                 return False, "No MX records found"
+            except dns.resolver.Timeout:
+                return False, "DNS lookup timeout"
             except Exception as e:
+                logger.error(f"DNS lookup error for {domain}: {str(e)}")
                 return False, f"DNS lookup error: {str(e)}"
                 
         except Exception as e:
+            logger.error(f"Domain validation error for {email}: {str(e)}")
             return False, f"Domain validation error: {str(e)}"
     
-    def validate_smtp(self, email, timeout=15):
-        """
-        Enhanced SMTP validation with better error handling
-        """
+    def is_role_email(self, email):
+        """Check if email is role-based"""
+        local_part = email.split('@')[0].lower()
+        return local_part in self.role_emails
+    
+    def validate_smtp(self, email, timeout=20):
+        """Enhanced SMTP validation with multiple fallback methods"""
         try:
             domain = email.split('@')[1]
             
-            # Get MX record
+            # Get MX records
             mx_records = dns.resolver.resolve(domain, 'MX')
-            mx_record = str(mx_records[0].exchange)
+            mx_records = sorted(mx_records, key=lambda x: x.preference)
             
-            # Try multiple SMTP ports and methods
-            smtp_ports = [25, 587, 465]
-            smtp_methods = ['plain', 'ssl', 'tls']
+            # Try multiple SMTP methods
+            smtp_configs = [
+                {'port': 25, 'method': 'plain'},
+                {'port': 587, 'method': 'tls'},
+                {'port': 465, 'method': 'ssl'},
+                {'port': 25, 'method': 'plain', 'timeout': 10}
+            ]
             
-            for port in smtp_ports:
-                for method in smtp_methods:
+            for config in smtp_configs:
+                for mx_record in mx_records[:2]:  # Try first 2 MX records
                     try:
+                        mx_host = str(mx_record.exchange)
+                        port = config['port']
+                        method = config['method']
+                        timeout_val = config.get('timeout', timeout)
+                        
                         if method == 'ssl':
-                            server = smtplib.SMTP_SSL(mx_record, port, timeout=timeout)
+                            server = smtplib.SMTP_SSL(mx_host, port, timeout=timeout_val)
                         else:
-                            server = smtplib.SMTP(mx_record, port, timeout=timeout)
+                            server = smtplib.SMTP(mx_host, port, timeout=timeout_val)
                             if method == 'tls':
                                 server.starttls()
                         
-                        server.helo('emailvalidator.com')
+                        # Set EHLO
+                        server.ehlo('emailvalidator.com')
+                        
+                        # Set sender
                         server.mail('test@emailvalidator.com')
                         
-                        # Test the email address
+                        # Test recipient
                         code, message = server.rcpt(email)
                         server.quit()
                         
@@ -139,34 +183,28 @@ class EmailValidator:
                         continue
                     except ssl.SSLError:
                         continue
-                    except Exception:
+                    except smtplib.SMTPAuthenticationError:
+                        continue
+                    except Exception as e:
+                        logger.debug(f"SMTP error for {email} on {mx_host}:{port}: {str(e)}")
                         continue
             
-            # If all methods failed, try a simpler approach
+            # If all SMTP methods failed, try a simple connection test
             try:
-                server = smtplib.SMTP(mx_record, 25, timeout=10)
+                mx_host = str(mx_records[0].exchange)
+                server = smtplib.SMTP(mx_host, 25, timeout=10)
                 server.helo('emailvalidator.com')
-                server.mail('test@emailvalidator.com')
-                code, message = server.rcpt(email)
                 server.quit()
-                
-                if code == 250:
-                    return True, "Email address exists"
-                elif code == 550:
-                    return False, "Email address does not exist"
-                else:
-                    return "unknown", f"SMTP response: {code} {message}"
-                    
-            except Exception as e:
-                return "unknown", f"SMTP validation failed: {str(e)}"
+                return "unknown", "SMTP server reachable but validation inconclusive"
+            except Exception:
+                return "unknown", "Cannot connect to mail server"
                 
         except Exception as e:
+            logger.error(f"SMTP validation error for {email}: {str(e)}")
             return "unknown", f"SMTP validation error: {str(e)}"
     
     def validate_single_email(self, email):
-        """
-        Validate a single email through all validation layers
-        """
+        """Validate a single email through all validation layers"""
         email = email.lower().strip()
         
         # Layer 1: Syntax validation
@@ -176,7 +214,8 @@ class EmailValidator:
                 'email': email,
                 'status': 'Syntax Error',
                 'details': syntax_message,
-                'timestamp': time.time()
+                'timestamp': time.time(),
+                'is_role': False
             }
         
         # Layer 2: Domain validation
@@ -191,8 +230,12 @@ class EmailValidator:
                 'email': email,
                 'status': status,
                 'details': domain_message,
-                'timestamp': time.time()
+                'timestamp': time.time(),
+                'is_role': False
             }
+        
+        # Check for role-based email
+        is_role = self.is_role_email(email)
         
         # Layer 3: SMTP validation
         smtp_result, smtp_message = self.validate_smtp(email)
@@ -208,13 +251,12 @@ class EmailValidator:
             'email': email,
             'status': status,
             'details': smtp_message,
-            'timestamp': time.time()
+            'timestamp': time.time(),
+            'is_role': is_role
         }
     
-    def validate_emails_batch(self, emails, progress_callback=None, max_workers=5):
-        """
-        Validate multiple emails with progress tracking
-        """
+    def validate_emails_batch(self, emails, progress_callback=None, max_workers=3):
+        """Validate multiple emails with progress tracking"""
         results = []
         total_emails = len(emails)
         processed = 0
@@ -240,11 +282,13 @@ class EmailValidator:
                         
                 except Exception as e:
                     email = future_to_email[future]
+                    logger.error(f"Validation failed for {email}: {str(e)}")
                     results.append({
                         'email': email,
                         'status': 'Error',
                         'details': f'Validation failed: {str(e)}',
-                        'timestamp': time.time()
+                        'timestamp': time.time(),
+                        'is_role': False
                     })
                     processed += 1
                     
