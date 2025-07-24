@@ -20,6 +20,8 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAnonymous, setIsAnonymous] = useState(false);
 
+  const API_BASE_URL = 'http://localhost:8000/api';
+
   // Check authentication on app start
   const checkAuth = useCallback(async () => {
     const token = localStorage.getItem('access_token');
