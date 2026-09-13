@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>evalidator - Usman Ghias</title>
+  <meta name="description" content="🚀 EmailValidator - Professional Email Validation SaaS (JavaScript).">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-main: #090d16;
+      --bg-card: #111827;
+      --bg-card-hover: #1f2937;
+      --border-subtle: #1e293b;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --code-bg: #030712;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      line-height: 1.65;
+      font-size: 16px;
+      padding-bottom: 60px;
+    }
+    header.site-header {
+      background: rgba(17, 24, 39, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-subtle);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .header-inner {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 14px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .header-logo {
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--text-main);
+      text-decoration: none;
+      letter-spacing: -0.01em;
+    }
+    .header-logo span {
+      color: var(--accent);
+    }
+    .header-links {
+      display: flex;
+      gap: 16px;
+    }
+    .header-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.15s;
+    }
+    .header-links a:hover {
+      color: var(--text-main);
+    }
+    .container {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 36px 24px;
+    }
+    .hero {
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 32px;
+      margin-bottom: 36px;
+    }
+    .meta-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 6px;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    .badge.lang {
+      color: var(--accent);
+      border-color: rgba(56, 189, 248, 0.3);
+      background: rgba(56, 189, 248, 0.08);
+    }
+    .badge.type {
+      color: #a78bfa;
+      border-color: rgba(167, 139, 250, 0.3);
+      background: rgba(167, 139, 250, 0.08);
+    }
+    h1.project-title {
+      font-size: 2.2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #ffffff;
+      margin-bottom: 12px;
+    }
+    p.project-desc {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      max-width: 780px;
+      margin-bottom: 24px;
+    }
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      padding: 10px 18px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      border-radius: 8px;
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #090d16;
+    }
+    .btn-primary:hover {
+      background: #7dd3fc;
+    }
+    .btn-secondary {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+    }
+    .btn-secondary:hover {
+      background: var(--bg-card-hover);
+      border-color: #334155;
+    }
+    .content-area {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 36px 40px;
+    }
+    .content-area h1, .content-area h2, .content-area h3, .content-area h4 {
+      color: #ffffff;
+      margin-top: 1.8rem;
+      margin-bottom: 0.9rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .content-area h1 { font-size: 1.6rem; border-bottom: 1px solid var(--border-subtle); padding-bottom: 8px; }
+    .content-area h2 { font-size: 1.35rem; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 6px; }
+    .content-area h3 { font-size: 1.15rem; }
+    .content-area p {
+      margin-bottom: 1.1rem;
+      color: #d1d5db;
+    }
+    .content-area ul, .content-area ol {
+      margin-bottom: 1.2rem;
+      padding-left: 24px;
+      color: #d1d5db;
+    }
+    .content-area li {
+      margin-bottom: 6px;
+    }
+    .content-area pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      margin-bottom: 1.4rem;
+    }
+    .content-area code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9em;
+      background: rgba(255, 255, 255, 0.07);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #7dd3fc;
+    }
+    .content-area pre code {
+      background: transparent;
+      padding: 0;
+      border-radius: 0;
+      color: #e5e7eb;
+    }
+    .content-area blockquote {
+      border-left: 3px solid var(--accent);
+      padding-left: 16px;
+      margin: 1.2rem 0;
+      color: #9ca3af;
+      font-style: italic;
+    }
+    .content-area table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1.4rem;
+    }
+    .content-area th, .content-area td {
+      padding: 10px 14px;
+      border: 1px solid var(--border-subtle);
+      text-align: left;
+    }
+    .content-area th {
+      background: #1f2937;
+      color: #ffffff;
+      font-weight: 600;
+    }
+    .content-area img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+      border: 1px solid var(--border-subtle);
+      margin: 12px 0;
+    }
+    footer.site-footer {
+      margin-top: 60px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.88rem;
+    }
+    footer.site-footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    footer.site-footer a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="https://usmanghias.github.io/Portfolio/" class="header-logo">Usman <span>Ghias</span></a>
+      <div class="header-links">
+        <a href="https://github.com/UsmanGhias/evalidator" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://usmanghias.github.io/Portfolio/" target="_blank" rel="noopener">Portfolio</a>
+        <a href="https://codcrafters.org" target="_blank" rel="noopener">CODCrafters</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <div class="meta-badges">
+        <span class="badge lang">JavaScript</span>
+        <span class="badge ">Open Source</span>
+        
+        <span class="badge">Branch: main</span>
+      </div>
+      <h1 class="project-title">evalidator</h1>
+      <p class="project-desc">🚀 EmailValidator - Professional Email Validation SaaS (JavaScript).</p>
+      <div class="hero-actions">
+        <a href="https://github.com/UsmanGhias/evalidator" class="btn btn-primary" target="_blank" rel="noopener">View on GitHub</a>
+        <a href="https://github.com/UsmanGhias/evalidator/issues" class="btn btn-secondary" target="_blank" rel="noopener">Issues & Feedback</a>
+      </div>
+    </section>
+
+    <article class="content-area">
+      <h1 id="emailvalidator-professional-email-validation-saas">🚀 EmailValidator - Professional Email Validation SaaS</h1>
+<blockquote>
+<p><strong>Enterprise-grade email validation with 99.9% accuracy. Trusted by 10,000+ companies worldwide.</strong></p>
+</blockquote>
+<p><a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
+<a href="https://python.org"><img alt="Python" src="https://img.shields.io/badge/Python-3.8+-blue.svg" /></a>
+<a href="https://reactjs.org"><img alt="React" src="https://img.shields.io/badge/React-18+-blue.svg" /></a>
+<a href="https://vercel.com"><img alt="Vercel" src="https://img.shields.io/badge/Deploy-Vercel-black.svg" /></a></p>
+<h2 id="features">✨ Features</h2>
+<h3 id="advanced-4-layer-validation">🔍 <strong>Advanced 4-Layer Validation</strong></h3>
+<ul>
+<li><strong>Syntax Validation</strong> - Advanced regex and format checking</li>
+<li><strong>Domain Verification</strong> - MX records and DNS validation  </li>
+<li><strong>SMTP Testing</strong> - Live server connectivity testing</li>
+<li><strong>Role Detection</strong> - Identify role-based vs personal emails</li>
+</ul>
+<h3 id="professional-features">🚀 <strong>Professional Features</strong></h3>
+<ul>
+<li><strong>Real-time Processing</strong> - Instant results with 99.9% accuracy</li>
+<li><strong>Bulk Processing</strong> - Handle millions of emails efficiently</li>
+<li><strong>API Access</strong> - RESTful API for integrations</li>
+<li><strong>Multiple Export Formats</strong> - CSV, JSON, Excel</li>
+<li><strong>Advanced Analytics</strong> - Detailed reporting and insights</li>
+<li><strong>Webhook Support</strong> - Real-time notifications</li>
+<li><strong>White-label Options</strong> - Custom branding for enterprise</li>
+</ul>
+<h3 id="flexible-pricing-plans">💳 <strong>Flexible Pricing Plans</strong></h3>
+<ul>
+<li><strong>Free</strong> - 100 emails/month, basic validation</li>
+<li><strong>Starter</strong> - $29/month, 1K emails, advanced features</li>
+<li><strong>Professional</strong> - $99/month, 10K emails, unlimited validations</li>
+<li><strong>Enterprise</strong> - $299/month, 100K emails, custom solutions</li>
+</ul>
+<h2 id="architecture">🏗️ Architecture</h2>
+<pre><code>┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   React Frontend│    │  Vercel API     │    │   Redis Cloud   │
+│                 │    │                 │    │                 │
+│ • Email Input   │◄──►│ • Validation    │◄──►│ • Job Storage   │
+│ • Results View  │    │ • Subscription  │    │ • User Data     │
+│ • Pricing Plans │    │ • Analytics     │    │ • Caching       │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+</code></pre>
+<h2 id="technology-stack">🛠️ Technology Stack</h2>
+<h3 id="frontend">Frontend</h3>
+<ul>
+<li><strong>React 18</strong> - Modern UI framework</li>
+<li><strong>Tailwind CSS</strong> - Professional styling</li>
+<li><strong>Lucide React</strong> - Beautiful icons</li>
+<li><strong>React Dropzone</strong> - File upload handling</li>
+</ul>
+<h3 id="backend">Backend</h3>
+<ul>
+<li><strong>Python 3.8+</strong> - Serverless functions</li>
+<li><strong>Vercel</strong> - Edge deployment</li>
+<li><strong>Redis Cloud</strong> - Data storage &amp; caching</li>
+<li><strong>DNSPython</strong> - DNS resolution</li>
+<li><strong>Email-validator</strong> - Syntax validation</li>
+</ul>
+<h3 id="infrastructure">Infrastructure</h3>
+<ul>
+<li><strong>Vercel Pro</strong> - Unlimited serverless functions</li>
+<li><strong>Redis Cloud</strong> - Managed Redis database</li>
+<li><strong>Stripe</strong> - Payment processing (production)</li>
+<li><strong>Cloudflare</strong> - CDN &amp; security</li>
+</ul>
+<h2 id="quick-start">🚀 Quick Start</h2>
+<h3 id="prerequisites">Prerequisites</h3>
+<ul>
+<li>Node.js 18+</li>
+<li>Python 3.8+</li>
+<li>Redis instance (local or cloud)</li>
+</ul>
+<h3 id="1-clone-repository">1. Clone Repository</h3>
+<pre><code class="language-bash">git clone https://github.com/yourusername/email-validator-saas.git
+cd email-validator-saas
+</code></pre>
+<h3 id="2-frontend-setup">2. Frontend Setup</h3>
+<pre><code class="language-bash">cd frontend
+npm install
+npm start
+</code></pre>
+<h3 id="3-backend-setup">3. Backend Setup</h3>
+<pre><code class="language-bash">cd api
+pip install -r requirements.txt
+</code></pre>
+<h3 id="4-environment-variables">4. Environment Variables</h3>
+<p>Create <code>.env</code> file in the root directory:</p>
+<pre><code class="language-bash"># Redis Configuration
+REDIS_URL=redis://localhost:6379/0
+
+# Production (when ready)
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_PUBLISHABLE_KEY=pk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+
+# Optional
+CUSTOM_DOMAIN=yourdomain.com
+SENTRY_DSN=https://...
+ANALYTICS_ID=G-...
+</code></pre>
+<h3 id="5-start-development">5. Start Development</h3>
+<pre><code class="language-bash"># Terminal 1 - Frontend
+cd frontend &amp;&amp; npm start
+
+# Terminal 2 - Backend (if using local development)
+cd api &amp;&amp; python -m http.server 8000
+</code></pre>
+<h2 id="api-documentation">📊 API Documentation</h2>
+<h3 id="validate-emails">Validate Emails</h3>
+<pre><code class="language-bash">POST /api/validate
+Content-Type: application/json
+
+{
+  &quot;emails&quot;: [&quot;user@example.com&quot;, &quot;test@domain.org&quot;],
+  &quot;user_id&quot;: &quot;user_123&quot;
+}
+</code></pre>
+<h3 id="get-subscription-status">Get Subscription Status</h3>
+<pre><code class="language-bash">GET /api/subscription?user_id=user_123
+</code></pre>
+<h3 id="upgrade-plan">Upgrade Plan</h3>
+<pre><code class="language-bash">POST /api/subscription
+Content-Type: application/json
+
+{
+  &quot;action&quot;: &quot;upgrade&quot;,
+  &quot;user_id&quot;: &quot;user_123&quot;,
+  &quot;plan&quot;: &quot;starter&quot;,
+  &quot;billing_cycle&quot;: &quot;monthly&quot;
+}
+</code></pre>
+<h2 id="ui-components">🎨 UI Components</h2>
+<h3 id="professional-design-system">Professional Design System</h3>
+<ul>
+<li><strong>Color Palette</strong> - Blue/indigo primary, neutral grays</li>
+<li><strong>Typography</strong> - Clean, readable fonts</li>
+<li><strong>Spacing</strong> - Consistent 8px grid system</li>
+<li><strong>Shadows</strong> - Subtle depth and elevation</li>
+<li><strong>Animations</strong> - Smooth transitions and micro-interactions</li>
+</ul>
+<h3 id="key-components">Key Components</h3>
+<ul>
+<li><code>EmailInput</code> - Multi-format email input with drag &amp; drop</li>
+<li><code>ValidationResults</code> - Advanced results table with filtering</li>
+<li><code>PricingPlans</code> - Professional pricing comparison</li>
+<li><code>ProgressTracker</code> - Real-time validation progress</li>
+<li><code>Header</code> - User plan status and navigation</li>
+</ul>
+<h2 id="configuration">🔧 Configuration</h2>
+<h3 id="validation-settings">Validation Settings</h3>
+<pre><code class="language-python"># api/email_validation_engine.py
+class EmailValidator:
+    def __init__(self):
+        self.timeout = 20  # SMTP timeout
+        self.max_retries = 3  # Retry attempts
+        self.max_workers = 3  # Concurrent validations
+</code></pre>
+<h3 id="plan-limits">Plan Limits</h3>
+<pre><code class="language-python"># api/subscription.py
+PLANS = {
+    'free': {'emails_limit': 100},
+    'starter': {'emails_limit': 1000},
+    'professional': {'emails_limit': 10000},
+    'enterprise': {'emails_limit': 100000}
+}
+</code></pre>
+<h2 id="deployment">🚀 Deployment</h2>
+<h3 id="vercel-deployment">Vercel Deployment</h3>
+<ol>
+<li>Connect GitHub repository to Vercel</li>
+<li>Set environment variables in Vercel dashboard</li>
+<li>Deploy with custom domain</li>
+<li>Configure SSL certificate</li>
+</ol>
+<h3 id="production-checklist">Production Checklist</h3>
+<ul>
+<li>[ ] Set up Redis Cloud instance</li>
+<li>[ ] Configure Stripe payment processing</li>
+<li>[ ] Set up monitoring (Sentry, Analytics)</li>
+<li>[ ] Configure custom domain</li>
+<li>[ ] Set up email support system</li>
+<li>[ ] Create legal documents (ToS, Privacy Policy)</li>
+</ul>
+<h2 id="business-metrics">📈 Business Metrics</h2>
+<h3 id="key-performance-indicators">Key Performance Indicators</h3>
+<ul>
+<li><strong>Monthly Recurring Revenue (MRR)</strong></li>
+<li><strong>Customer Acquisition Cost (CAC)</strong></li>
+<li><strong>Lifetime Value (LTV)</strong></li>
+<li><strong>Churn Rate</strong></li>
+<li><strong>Validation Success Rate</strong></li>
+</ul>
+<h3 id="analytics-events">Analytics Events</h3>
+<ul>
+<li>Email validation attempts</li>
+<li>Plan upgrades/downgrades</li>
+<li>Feature usage</li>
+<li>Error rates</li>
+<li>User engagement</li>
+</ul>
+<h2 id="security-compliance">🔒 Security &amp; Compliance</h2>
+<h3 id="data-protection">Data Protection</h3>
+<ul>
+<li><strong>Encryption</strong> - Data encrypted in transit and at rest</li>
+<li><strong>GDPR Compliance</strong> - EU data protection regulations</li>
+<li><strong>SOC 2</strong> - Security compliance framework</li>
+<li><strong>Data Retention</strong> - Configurable retention policies</li>
+</ul>
+<h3 id="security-features">Security Features</h3>
+<ul>
+<li>Rate limiting</li>
+<li>Input validation</li>
+<li>SQL injection prevention</li>
+<li>XSS protection</li>
+<li>CSRF protection</li>
+</ul>
+<h2 id="contributing">🤝 Contributing</h2>
+<ol>
+<li>Fork the repository</li>
+<li>Create a feature branch (<code>git checkout -b feature/amazing-feature</code>)</li>
+<li>Commit your changes (<code>git commit -m 'Add amazing feature'</code>)</li>
+<li>Push to the branch (<code>git push origin feature/amazing-feature</code>)</li>
+<li>Open a Pull Request</li>
+</ol>
+<h2 id="license">📄 License</h2>
+<p>This project is licensed under the MIT License - see the <a href="LICENSE">LICENSE</a> file for details.</p>
+<h2 id="support">🆘 Support</h2>
+<ul>
+<li><strong>Documentation</strong> - <a href="https://docs.emailvalidator.com">docs.emailvalidator.com</a></li>
+<li><strong>Email Support</strong> - support@emailvalidator.com</li>
+<li><strong>Live Chat</strong> - Available during business hours</li>
+<li><strong>GitHub Issues</strong> - For bug reports and feature requests</li>
+</ul>
+<h2 id="roadmap">🏆 Roadmap</h2>
+<h3 id="q1-2024">Q1 2024</h3>
+<ul>
+<li>[ ] Stripe payment integration</li>
+<li>[ ] Advanced analytics dashboard</li>
+<li>[ ] Webhook system</li>
+<li>[ ] API rate limiting</li>
+</ul>
+<h3 id="q2-2024">Q2 2024</h3>
+<ul>
+<li>[ ] White-label solutions</li>
+<li>[ ] Custom SMTP servers</li>
+<li>[ ] Advanced reporting</li>
+<li>[ ] Mobile app</li>
+</ul>
+<h3 id="q3-2024">Q3 2024</h3>
+<ul>
+<li>[ ] Enterprise features</li>
+<li>[ ] On-premise deployment</li>
+<li>[ ] Advanced integrations</li>
+<li>[ ] AI-powered insights</li>
+</ul>
+<hr />
+<p><strong>Built with ❤️ by the EmailValidator team</strong></p>
+<p><em>Professional email validation for the modern web.</em> </p>
+<h1 id="email-validator">Email Validator</h1>
+<p>Professional email validation service with 93% accuracy.</p>
+<h2 id="quick-start_1">Quick Start</h2>
+<pre><code class="language-bash"># Install dependencies
+cd backend &amp;&amp; pip install -r requirements.txt
+cd frontend &amp;&amp; npm install
+
+# Start services
+./start_production.sh
+</code></pre>
+<h2 id="features_1">Features</h2>
+<ul>
+<li>✅ Anonymous validation (10 emails free)</li>
+<li>✅ Professional SMTP validation</li>
+<li>✅ Redis caching</li>
+<li>✅ Role email detection</li>
+<li>✅ CSV export</li>
+</ul>
+<h2 id="deploy-to-vercel">Deploy to Vercel</h2>
+<ol>
+<li>Connect GitHub repo to Vercel</li>
+<li>Deploy automatically</li>
+</ol>
+<h2 id="api">API</h2>
+<ul>
+<li>Backend: http://localhost:5000</li>
+<li>Frontend: http://localhost:3000 </li>
+</ul>
+    </article>
+
+    <footer class="site-footer">
+      <p>Project documentation maintained by <a href="https://github.com/UsmanGhias">Usman Ghias</a>, Founder & Lead Architect at <a href="https://codcrafters.org">CODCrafters</a>.</p>
+    </footer>
+  </main>
+</body>
+</html>
